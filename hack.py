@@ -1,7 +1,9 @@
 import ads as ads
+import pandas
 import progressbar
 
 import json
+import sys
 
 with open('api.conf') as api_f:
     ads.config.token = api_f.read().strip()
@@ -11,33 +13,6 @@ STARTING_QUERY = 'Lintott, C'
 
 CACHED_PAPERS = {}
 REMAINING_API_CALLS = 0
-
-#def extend_authors(authors, seen_papers, papers):
-#    new_authors = set()
-#    for paper, paper_authors in papers.values():
-#        if paper in seen_papers:
-#            continue
-#        seen_papers.add(paper)
-#        for author in paper_authors:
-#            if author not in authors:
-#                new_authors.add(author)
-#                authors[author] = set()
-#            coauthors = authors[author]
-#            for coauthor in paper.author:
-#                if author == coauthor:
-#                    continue
-#                coauthors.add(coauthor)
-#    return new_authors
-
-def extend_authors(authors, seen_papers, papers):
-    for paper, paper_authors in papers.items():
-        if paper in seen_papers:
-            continue
-        seen_papers.add(paper)
-        for author in paper_authors:
-            authors[author] = (
-                authors.get(author, set()) | set(paper_authors) - set(author)
-            )
 
 def cached_query(q):
     global CACHED_PAPERS
@@ -60,30 +35,37 @@ def cached_query(q):
     return CACHED_PAPERS[q]
 
 try:
-    authors = {}
     seen_papers = set()
 
-    print("Getting initial authors")
+    print("Getting direct coauthors")
 
     starting_papers = cached_query(q=STARTING_QUERY)
-    extend_authors(authors, seen_papers, starting_papers)
-    new_authors = set(authors.keys())
-    previous_authors = new_authors
 
-    for i in range(1, SEARCH_DEPTH - 1):
-        print("Getting coauthors (iteration {})".format(i))
-        for author in progressbar.progressbar(new_authors, redirect_stdout=True):
-            q = cached_query(q=author)
-            extend_authors(authors, seen_papers, q)
+    all_coauthors = set()
+    for paper, authors in starting_papers.items():
+        all_coauthors = all_coauthors | set(authors)
 
-        print("Remaining ADS API calls: {}".format(REMAINING_API_CALLS))
+    print("Getting second order authors")
 
-        with open('/opt/cache/cache.json', 'w') as cache_f:
-            json.dump(CACHED_PAPERS, cache_f)
+    all_2nd_order_coauthors = set()
+    for author in progressbar.progressbar(all_coauthors):
+        coauthor_papers = cached_query(author)
+        for coauthor_paper, new_authors in coauthor_papers.items():
+            all_2nd_order_coauthors = all_2nd_order_coauthors | set(new_authors)
 
-        all_authors = set(authors.keys())
-        new_authors = all_authors - previous_authors
-        previous_authors = all_authors
+    init_values = [False for x in all_2nd_order_coauthors]
+
+    authors = pandas.DataFrame(
+        {a:init_values for a in all_coauthors},
+        index=all_2nd_order_coauthors,
+    )
+
+    print("Finding connections")
+    for author in progressbar.progressbar(all_coauthors):
+        coauthor_papers = cached_query(author)
+        for coauthor_paper, second_order_authors in coauthor_papers.items():
+            for second_order_author in second_order_authors:
+                authors[author][second_order_author] = True
 finally:
     print("Remaining ADS API calls: {}".format(REMAINING_API_CALLS))
     with open('/opt/cache/cache.json', 'w') as cache_f:
