@@ -8,7 +8,6 @@ import sys
 with open('api.conf') as api_f:
     ads.config.token = api_f.read().strip()
 
-SEARCH_DEPTH = 3
 STARTING_QUERY = 'Lintott, C'
 
 CACHED_PAPERS = {}
@@ -53,7 +52,7 @@ try:
         for coauthor_paper, new_authors in coauthor_papers.items():
             all_2nd_order_coauthors = all_2nd_order_coauthors | set(new_authors)
 
-    init_values = [False for x in all_2nd_order_coauthors]
+    init_values = [0.0 for x in all_2nd_order_coauthors]
 
     authors = pandas.DataFrame(
         {a:init_values for a in all_coauthors},
@@ -65,7 +64,12 @@ try:
         coauthor_papers = cached_query(author)
         for coauthor_paper, second_order_authors in coauthor_papers.items():
             for second_order_author in second_order_authors:
-                authors[author][second_order_author] = True
+                authors[author][second_order_author] = 1.0
+
+    second_order_totals = authors.sum(1)
+    sorted_second_order = second_order_totals.sort_values()
+    print(sorted_second_order)
+    print(sorted_second_order/len(all_coauthors))
 finally:
     print("Remaining ADS API calls: {}".format(REMAINING_API_CALLS))
     with open('/opt/cache/cache.json', 'w') as cache_f:
